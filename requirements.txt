@@ -1,0 +1,2 @@
+# ProjectSphere uses Python standard library modules (sqlite3, json, urllib, http.server).
+# No external pip dependencies required.

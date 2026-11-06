@@ -1,0 +1,855 @@
+"""
+Database module for Student Project Idea Recommender System.
+Manages SQLite database schema, connections, queries, and seed data.
+"""
+
+import sqlite3
+import json
+import os
+import shutil
+from datetime import datetime
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BUNDLE_DB_PATH = os.path.join(BASE_DIR, "recommender.db")
+
+# In Vercel serverless environment, the root is read-only. We use /tmp for write operations.
+if os.environ.get("VERCEL"):
+    DB_PATH = "/tmp/recommender.db"
+    if not os.path.exists(DB_PATH) and os.path.exists(BUNDLE_DB_PATH):
+        try:
+            shutil.copyfile(BUNDLE_DB_PATH, DB_PATH)
+        except Exception:
+            pass
+else:
+    DB_PATH = BUNDLE_DB_PATH
+
+def get_db_connection():
+    """Returns a connection to the SQLite database with row factory enabled."""
+    if os.environ.get("VERCEL"):
+        if not os.path.exists(DB_PATH):
+            if os.path.exists(BUNDLE_DB_PATH):
+                try:
+                    shutil.copyfile(BUNDLE_DB_PATH, DB_PATH)
+                except Exception:
+                    pass
+            if not os.path.exists(DB_PATH):
+                init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db(force_reseed=False):
+    """Initializes the database schema and seeds initial projects if empty or forced."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Create Students table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS students (
+        student_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        department TEXT NOT NULL,
+        skills TEXT NOT NULL,
+        technologies TEXT NOT NULL,
+        interests TEXT NOT NULL,
+        preferred_type TEXT DEFAULT 'either',
+        difficulty TEXT DEFAULT 'intermediate',
+        duration TEXT DEFAULT '2-3 months',
+        team_size INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # Create Projects table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS projects (
+        project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT NOT NULL,
+        technologies TEXT NOT NULL,
+        required_skills TEXT NOT NULL,
+        difficulty TEXT NOT NULL,
+        duration TEXT NOT NULL,
+        team_size TEXT NOT NULL,
+        problem_solved TEXT,
+        objectives TEXT,
+        modules TEXT,
+        db_requirements TEXT,
+        future_enhancements TEXT,
+        advantages TEXT,
+        expected_output TEXT,
+        is_custom INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # Create Favorites table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS favorites (
+        favorite_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        project_id INTEGER NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects (project_id) ON DELETE CASCADE
+    )
+    """)
+
+    # Create Recommendations table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS recommendations (
+        recommendation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        project_id INTEGER NOT NULL,
+        match_score REAL NOT NULL,
+        why_matched TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects (project_id) ON DELETE CASCADE
+    )
+    """)
+
+    # Create Recommendation Sessions table (history)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS recommendation_sessions (
+        session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        student_name TEXT,
+        department TEXT,
+        search_params TEXT,
+        results_count INTEGER,
+        top_match_score REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    conn.commit()
+
+    # Check if projects exist
+    cursor.execute("SELECT COUNT(*) FROM projects")
+    count = cursor.fetchone()[0]
+
+    if count == 0 or force_reseed:
+        if force_reseed:
+            cursor.execute("DELETE FROM projects")
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'projects'")
+        seed_projects(conn)
+
+    conn.close()
+
+def seed_projects(conn):
+    """Populates the database with 40+ rich, realistic academic CSE project ideas."""
+    cursor = conn.cursor()
+
+    projects = [
+        # --- WEB DEVELOPMENT ---
+        {
+            "title": "Smart Campus Placement & Internship Management Portal",
+            "category": "Web Development",
+            "description": "An end-to-end web platform connecting students, college placement cells, and hiring companies with automated resume screening and interview scheduling.",
+            "technologies": "React, Node.js, Express, MongoDB, Tailwind CSS, JWT",
+            "required_skills": "JavaScript, HTML5, CSS3, REST API Development",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Eliminates chaotic spreadsheet tracking for college placement drives, prevents missed deadlines, and provides verified student performance reports to recruiters.",
+            "objectives": "1. Build role-based dashboards for Students, TPO Admins, and Recruiters.\n2. Implement real-time job application tracking and automated email alerts.\n3. Integrate resume PDF parsing and eligibility criteria filter algorithms.",
+            "modules": "Module 1: Student Profile & Resume Vault\nModule 2: Recruiter Job Posting & Candidate Filter Engine\nModule 3: Placement Officer Analytics & Drive Coordinator\nModule 4: Notification & Interview Slot Booking System",
+            "db_requirements": "Users (id, role, email, password_hash), Profiles (student_id, cgpa, resume_url, skills), Jobs (job_id, company, min_cgpa, deadlines), Applications (app_id, status, timestamps)",
+            "future_enhancements": "AI-based interview preparation bot, automated coding test integration, and alumni mentorship connect.",
+            "advantages": "Directly deployable in academic institutes, eliminates paperwork, ensures transparent placement auditing.",
+            "expected_output": "Fully responsive web application with multi-role authentication, dynamic reports, and PDF resume generator."
+        },
+        {
+            "title": "Real-Time Collaborative Code Editor & Pair Programming Hub",
+            "category": "Web Development",
+            "description": "A cloud-based real-time collaborative coding environment with WebSockets, syntax highlighting, multi-language execution, and integrated video/chat.",
+            "technologies": "React, TypeScript, Node.js, Socket.io, Monaco Editor, Docker",
+            "required_skills": "JavaScript, TypeScript, WebSockets, HTML5, CSS3",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-4 members)",
+            "problem_solved": "Remote software engineering students and interviewers struggle with laggy screen sharing and lack of synchronized code execution during collaborative study sessions.",
+            "objectives": "1. Enable simultaneous multi-user code editing with operational transformation (OT) or CRDT.\n2. Execute user code securely inside isolated Docker containers.\n3. Provide integrated audio/text chat and room management.",
+            "modules": "Module 1: Collaborative Monaco Editor & Cursor Synchronization\nModule 2: Sandboxed Code Execution Service\nModule 3: WebRTC Audio/Video & Chat Communication\nModule 4: Workspace Session Persistence & GitHub Gist Export",
+            "db_requirements": "Users, Workspaces (room_code, language, code_content), ExecutionLogs (runtime, exit_code, memory), ChatHistory",
+            "future_enhancements": "AI code completion agent, multi-file project workspace support, automated unit testing harness.",
+            "advantages": "High technical depth, demonstrates deep mastery of concurrency, WebSockets, and systems architecture.",
+            "expected_output": "Interactive browser IDE supporting Python, JavaScript, and C++ with sub-second synchronization between collaborators."
+        },
+        {
+            "title": "Decentralized Alumni Network & Mentorship Platform",
+            "category": "Web Development",
+            "description": "A college alumni engagement portal featuring skill-based mentor matching, event organizing, donation tracking, and career referral boards.",
+            "technologies": "Vue.js, Python, Flask, PostgreSQL, Bootstrap",
+            "required_skills": "Python, JavaScript, SQL, HTML5",
+            "difficulty": "Beginner",
+            "duration": "1-2 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Colleges lose touch with graduating batches, depriving current students of crucial industry guidance and referral networks.",
+            "objectives": "1. Maintain an active directory of verified college alumni.\n2. Allow students to book 1-on-1 mentorship sessions.\n3. Publish job vacancies and campus reunion events.",
+            "modules": "Module 1: Member Registration & Verification\nModule 2: Mentorship Matching & Calendar Scheduling\nModule 3: Referral & Job Opportunity Board\nModule 4: Donation & Endowment Transparency Tracker",
+            "db_requirements": "Alumni, Students, Bookings, JobPostings, Events",
+            "future_enhancements": "LinkedIn profile auto-sync, automated newsletter digest, mobile push alerts.",
+            "advantages": "High social impact for universities, straightforward architecture ideal for beginner-intermediate developers.",
+            "expected_output": "Clean web portal with directory search, calendar booking, and administrative approval workflow."
+        },
+
+        # --- ARTIFICIAL INTELLIGENCE ---
+        {
+            "title": "AI-Powered Multimodal Classroom Attention & Engagement Analyzer",
+            "category": "Artificial Intelligence",
+            "description": "An intelligent computer vision and NLP system that analyzes student engagement levels during hybrid lectures using facial emotion detection and head pose estimation.",
+            "technologies": "Python, OpenCV, MediaPipe, PyTorch, FastAPI, Streamlit",
+            "required_skills": "Python, Deep Learning, Computer Vision, PyTorch",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Instructors in large or virtual classrooms cannot gauge student comprehension and attention drop-offs in real time.",
+            "objectives": "1. Detect faces and track gaze direction and head pose yaw/pitch/roll.\n2. Classify facial micro-expressions (focused, confused, drowsy, distracted).\n3. Aggregate engagement index across the lecture timeline.",
+            "modules": "Module 1: Video Frame Capture & Facial Landmark Extraction\nModule 2: Head Pose & Eye Aspect Ratio (EAR) Drowsiness Classifier\nModule 3: Temporal Emotion Aggregator & Heatmap Generator\nModule 4: Teacher Analytics Dashboard & Alert Trigger",
+            "db_requirements": "Sessions (session_id, course_code, timestamp), EngagementMetrics (timestamp, avg_score, confusion_rate), AlertLogs",
+            "future_enhancements": "Speech tone analysis of instructor to correlate teaching pace with engagement dips.",
+            "advantages": "Innovative blend of vision and affective computing, high publication and conference potential.",
+            "expected_output": "Real-time dashboard displaying second-by-second engagement graphs, confusion alerts, and session summary PDFs."
+        },
+        {
+            "title": "Intelligent Conversational Legal & Academic Policy Assistant",
+            "category": "Artificial Intelligence",
+            "description": "A Retrieval-Augmented Generation (RAG) conversational agent capable of answering complex college bylaws, grading policies, and grievance procedures with precise citations.",
+            "technologies": "Python, LangChain, FAISS, Ollama/OpenAI API, FastAPI, React",
+            "required_skills": "Python, NLP, Prompt Engineering, REST APIs",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Students and faculty struggle to navigate dense 200-page academic rulebooks, leading to misinterpretations and administrative delays.",
+            "objectives": "1. Ingest college ordinance PDFs, parse text, and generate vector embeddings.\n2. Retrieve relevant document chunks using hybrid dense-sparse search.\n3. Synthesize factual, hallucination-free answers with exact page citations.",
+            "modules": "Module 1: Document Ingestion, Chunking & Embedding Pipeline\nModule 2: FAISS Vector Database & Semantic Retrieval Engine\nModule 3: LLM Prompt Construction with Guardrails & Source Verification\nModule 4: Conversational Chat UI with History & Feedback Loop",
+            "db_requirements": "Documents (doc_id, title, hash, chunk_count), Conversations (conv_id, user_query, bot_response, latency, sources)",
+            "future_enhancements": "Support for regional Indian languages, voice query input, and auto-syncing with college notices.",
+            "advantages": "State-of-the-art Generative AI architecture, highly relevant to current industry demands.",
+            "expected_output": "Conversational web bot delivering answers within 1.5 seconds, citing exact policy numbers and paragraphs."
+        },
+
+        # --- MACHINE LEARNING ---
+        {
+            "title": "Student Academic Performance Predictor & Early Warning System",
+            "category": "Machine Learning",
+            "description": "A machine learning pipeline that forecasts student exam performance and dropout risk based on attendance, quiz trends, LMS engagement, and assignment habits.",
+            "technologies": "Python, Scikit-learn, Pandas, XGBoost, Streamlit, Matplotlib",
+            "required_skills": "Python, Machine Learning, Data Preprocessing, Statistics",
+            "difficulty": "Intermediate",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Academic mentors only notice struggling students after final semester exam failures, when it is too late for corrective interventions.",
+            "objectives": "1. Clean and engineer features from historical academic and behavioral logs.\n2. Train and compare Random Forest, XGBoost, and Logistic Regression models.\n3. Generate actionable SHAP explanations explaining individual student risk factors.",
+            "modules": "Module 1: Data Cleansing, Imputation & Feature Scaling\nModule 2: Model Training, Hyperparameter Tuning & Cross-Validation\nModule 3: Explainable AI Module (SHAP & LIME Feature Importance)\nModule 4: Counselor Dashboard & Intervention Recommender",
+            "db_requirements": "Students, HistoricalScores, AttendanceLogs, ModelPredictions (student_id, risk_level, key_factors)",
+            "future_enhancements": "Incorporation of sentiment analysis from student feedback questionnaires.",
+            "advantages": "High utility for colleges, clean statistical and ML rigor, excellent for resume and viva.",
+            "expected_output": "Interactive dashboard with risk classifications (Low/Medium/High), feature importance charts, and printable mentor reports."
+        },
+        {
+            "title": "Precision Crop Disease Diagnosis & Treatment Recommender",
+            "category": "Machine Learning",
+            "description": "An automated deep learning system that detects crop leaf diseases from smartphone photographs and provides local language organic and chemical remedies.",
+            "technologies": "Python, TensorFlow, Keras, CNN, OpenCV, Flask",
+            "required_skills": "Python, Deep Learning, Image Processing",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Smallholder farmers suffer heavy crop yield losses due to delayed diagnosis and incorrect pesticide application.",
+            "objectives": "1. Train a Convolutional Neural Network (MobileNetV2/ResNet50) on 50,000+ PlantVillage leaf images.\n2. Achieve >95% classification accuracy across 38 crop-disease classes.\n3. Recommend weather-adjusted fertilizer and bio-fungicide treatments.",
+            "modules": "Module 1: Dataset Augmentation & Transfer Learning Pipeline\nModule 2: Lightweight Model Quantization (TFLite)\nModule 3: Prescription Engine based on Crop Stage and Severity\nModule 4: Mobile-Friendly Web Inference UI",
+            "db_requirements": "Diseases (id, name, crop, symptoms, treatment_organic, treatment_chemical), PredictionLogs",
+            "future_enhancements": "Offline edge deployment on cheap Raspberry Pi or mobile app, soil sensor integration.",
+            "advantages": "Strong social and agrarian relevance, practical computer vision implementation.",
+            "expected_output": "Web app where uploading any plant leaf photo immediately returns disease name, confidence %, and remedy guide."
+        },
+        {
+            "title": "Financial Credit Card Fraud Detection with Unbalanced Ensemble",
+            "category": "Machine Learning",
+            "description": "Real-time anomaly detection system handling heavily imbalanced financial transaction data using Isolation Forests, SMOTE, and LightGBM.",
+            "technologies": "Python, LightGBM, Scikit-learn, SMOTE, FastAPI, Docker",
+            "required_skills": "Python, Machine Learning, Anomaly Detection",
+            "difficulty": "Advanced",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Financial institutions face millions in losses from credit card fraud while battling high false-positive rates that disrupt legitimate users.",
+            "objectives": "1. Address severe class imbalance (0.17% fraud transactions) using advanced sampling techniques.\n2. Engineer behavioral time-delta and geographic distance features.\n3. Serve real-time predictions with sub-50ms latency via REST API.",
+            "modules": "Module 1: Exploratory Data Analysis & PCA Feature Transformation\nModule 2: Imbalance Handling (SMOTE-ENN & Tomek Links)\nModule 3: LightGBM + Isolation Forest Ensemble Training\nModule 4: REST API & Simulated Transaction Stream Tester",
+            "db_requirements": "Transactions, FraudAlerts, ModelMetricsHistory",
+            "future_enhancements": "Graph neural network integration to detect organized fraud rings.",
+            "advantages": "Direct industry use-case, demonstrates understanding of production ML pipelines and metric trade-offs (AUPRC, Recall).",
+            "expected_output": "Production REST API with comprehensive benchmark documentation and streaming test client."
+        },
+
+        # --- DATA SCIENCE ---
+        {
+            "title": "Smart City Urban Mobility & Traffic Congestion Forecaster",
+            "category": "Data Science",
+            "description": "An interactive data science platform that analyzes municipal GPS sensor data, weather, and incidents to forecast urban gridlock and optimize traffic signal timings.",
+            "technologies": "Python, Pandas, GeoPandas, Prophet, Folium, Streamlit",
+            "required_skills": "Python, Data Analysis, Time Series Forecasting, GIS",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Urban commuters waste thousands of hours in traffic jams; city planners lack predictive tools for real-time congestion mitigation.",
+            "objectives": "1. Aggregate and cleanse spatio-temporal road sensor and weather feeds.\n2. Perform time-series decomposition and seasonal forecasting using Prophet/ARIMA.\n3. Render geospatial congestion heatmaps with interactive route simulation.",
+            "modules": "Module 1: ETL Pipeline for Geospatial & Sensor Data\nModule 2: Congestion Index Calculation & Peak Hour Profiling\nModule 3: Time Series Traffic Flow Predictor\nModule 4: Folium Geospatial Map Dashboard",
+            "db_requirements": "JunctionSensors, TrafficLogs (timestamp, junction_id, vehicle_count, avg_speed), WeatherData",
+            "future_enhancements": "Emergency vehicle green corridor route recommendation.",
+            "advantages": "Impressive visual presentation with interactive map layers, strong portfolio piece.",
+            "expected_output": "Interactive dashboard with choropleth maps, 24-hour congestion forecasts, and bottleneck hotspot alerts."
+        },
+        {
+            "title": "E-Commerce Customer Lifetime Value & Churn Propensity Analyzer",
+            "category": "Data Science",
+            "description": "Customer segmentation and predictive analytics tool applying RFM modeling, survival analysis, and cohort analysis to identify at-risk shoppers.",
+            "technologies": "Python, Pandas, Seaborn, Scikit-learn, Lifelines, Dash",
+            "required_skills": "Python, Statistical Modeling, Data Visualization",
+            "difficulty": "Beginner",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "E-commerce retailers spend 5x more acquiring new customers than retaining existing ones due to lack of churn visibility.",
+            "objectives": "1. Calculate Recency, Frequency, and Monetary (RFM) scores for customer cohorts.\n2. Apply K-Means clustering to discover high-value and dormant segments.\n3. Build Kaplan-Meier survival curves to estimate customer lifespan.",
+            "modules": "Module 1: Transaction Data Cleaning & Customer Aggregation\nModule 2: RFM Segmentation & K-Means Cluster Analysis\nModule 3: Churn Classification & Cox Proportional Hazards Model\nModule 4: Executive Business Intelligence Dashboard",
+            "db_requirements": "Customers, Orders, OrderItems, SegmentProfiles",
+            "future_enhancements": "Automated email discount trigger based on churn probability thresholds.",
+            "advantages": "Direct business application, high demand in data analyst and business intelligence roles.",
+            "expected_output": "Comprehensive Dash dashboard with interactive cluster scatters, retention cohorts, and revenue forecasts."
+        },
+
+        # --- CYBERSECURITY ---
+        {
+            "title": "Automated Web Application Vulnerability Scanner & Penetration Tool",
+            "category": "Cybersecurity",
+            "description": "A modular security scanning tool that inspects target web applications for OWASP Top 10 vulnerabilities including SQL Injection, XSS, and CSRF.",
+            "technologies": "Python, BeautifulSoup4, Requests, Scapy, SQLite, Vue.js",
+            "required_skills": "Python, Web Security, OWASP Concepts, Networking",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Small organizations and student developers deploy insecure web applications without realizing they are vulnerable to critical data breaches.",
+            "objectives": "1. Crawl internal target links and extract input forms and URL parameters.\n2. Fuzz input parameters with curated SQLi, XSS, and directory traversal payloads.\n3. Score findings using CVSS v3.1 framework and generate executive audit PDFs.",
+            "modules": "Module 1: Web Crawler & Form Discovery Spider\nModule 2: Payload Injection & Blind/Reflected Vulnerability Verifier\nModule 3: HTTP Header & SSL/TLS Configuration Checker\nModule 4: CVSS Severity Scoring Engine & HTML/PDF Report Builder",
+            "db_requirements": "ScanTargets, ScanJobs, Findings (vuln_type, url, parameter, proof, cvss_score, remediation)",
+            "future_enhancements": "Dockerized sandbox testing, authenticated crawling via JWT/cookies, CVE database lookups.",
+            "advantages": "Demonstrates practical offensive security knowledge, highly valued for ethical hacking and SecOps roles.",
+            "expected_output": "CLI and Web GUI scanner producing detailed penetration test reports with remediation code snippets."
+        },
+        {
+            "title": "Phishing Detection Engine using URL Lexical & NLP Email Forensics",
+            "category": "Cybersecurity",
+            "description": "An email and URL defense gateway that identifies zero-day phishing attempts by analyzing domain typosquatting, header forgery (SPF/DKIM), and psychological urgency triggers.",
+            "technologies": "Python, Scikit-learn, NLTK, Whois, FastAPI, Chrome Extension",
+            "required_skills": "Python, Cybersecurity, NLP, Machine Learning",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Phishing remains the #1 entry point for ransomware attacks, deceiving users with increasingly sophisticated spoofed domains.",
+            "objectives": "1. Extract lexical features from URLs (entropy, subdomain depth, Levenshtein distance against top 10k sites).\n2. Parse raw EML headers for DMARC/SPF authentication failures.\n3. Analyze email body text for coercive language using NLP sentiment and topic models.",
+            "modules": "Module 1: URL Feature Extractor & Domain Age Lookup\nModule 2: Email Header Parser & Cryptographic Signature Inspector\nModule 3: Random Forest Phishing Classifier\nModule 4: Lightweight Browser Extension for Real-Time Warnings",
+            "db_requirements": "KnownPhishingDB, DomainReputations, UserAlertHistory",
+            "future_enhancements": "Computer vision screenshot comparison of fake login pages against genuine brands.",
+            "advantages": "Practical everyday defense tool, easy to demonstrate in viva with live test links.",
+            "expected_output": "FastAPI scanner and browser extension alerting users before they type credentials into suspicious domains."
+        },
+
+        # --- COMPUTER NETWORKS ---
+        {
+            "title": "Software-Defined Networking (SDN) Dynamic DDoS Mitigation Controller",
+            "category": "Computer Networks",
+            "description": "A programmable network defense controller built on Ryu/Mininet that monitors OpenFlow packet statistics and automatically throttles SYN/UDP flood attacks.",
+            "technologies": "Python, Ryu Controller, Mininet, OpenFlow, Wireshark, iperf",
+            "required_skills": "Python, Computer Networks, TCP/IP Protocols, Linux",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Traditional static firewalls struggle to adapt to sudden distributed denial of service attacks without human intervention.",
+            "objectives": "1. Simulate custom virtual network topologies with Mininet and OpenFlow switches.\n2. Track flow statistics (packet_count, byte_count, packet_in rate) at 1-second intervals.\n3. Dynamically push reactive drop/rate-limit flow rules to perimeter switches.",
+            "modules": "Module 1: Mininet Topology Generator & Attack Traffic Script (hping3)\nModule 2: OpenFlow Statistical Polling Engine\nModule 3: Entropy-Based Anomaly Detection Algorithm\nModule 4: Dynamic Flow Rule Insertion & Network Graph Visualizer",
+            "db_requirements": "FlowLogs, AttackEvents, TopologyNodes",
+            "future_enhancements": "Reinforcement learning for proactive bandwidth reallocation.",
+            "advantages": "Deep systems and networking fundamentals, highly respected in network engineering curricula.",
+            "expected_output": "Live Mininet testbed demonstrating automated attack detection and recovery of normal user ping times within 3 seconds."
+        },
+        {
+            "title": "Peer-to-Peer Encrypted File Sharing System with NAT Traversal",
+            "category": "Computer Networks",
+            "description": "A decentralized peer-to-peer file transfer application utilizing UDP hole punching, chunked SHA-256 verification, and end-to-end AES-GCM encryption.",
+            "technologies": "Go/Python, Socket Programming, STUN Protocol, Cryptography",
+            "required_skills": "Python/Go, Socket Programming, Cryptography, Networking",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Transferring large confidential datasets between students across different college LANs requires third-party cloud intermediaries.",
+            "objectives": "1. Implement STUN client protocol to discover external public IP and NAT mapping.\n2. Establish direct UDP/TCP hole punching between peers behind firewalls.\n3. Transfer chunked files with pause/resume and integrity hashing.",
+            "modules": "Module 1: Rendezvous Signaling Server & Peer Discovery\nModule 2: NAT Traversal & Hole Punching Engine\nModule 3: AES-256-GCM Handshake & Symmetric Key Exchange (Diffie-Hellman)\nModule 4: Parallel Chunk Transfer & Verification Manager",
+            "db_requirements": "PeerRegistry, FileManifests (hash, total_chunks, size)",
+            "future_enhancements": "BitTorrent-like multi-source swarm downloading and mobile client.",
+            "advantages": "Superb demonstration of fundamental socket programming, concurrency, and security.",
+            "expected_output": "Terminal/GUI client capable of directly transferring gigabyte files between computers across separated networks."
+        },
+
+        # --- DATABASE MANAGEMENT ---
+        {
+            "title": "Distributed In-Memory Key-Value Store with Raft Consensus",
+            "category": "Database Management",
+            "description": "A fault-tolerant distributed key-value storage engine implementing leader election, log replication, and persistence via append-only log files.",
+            "technologies": "Python, gRPC, Protobuf, Multi-threading, SQLite",
+            "required_skills": "Python, Concurrency, Distributed Systems, Data Structures",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Single-node databases suffer downtime and data loss during server crashes; students need hands-on understanding of consensus algorithms.",
+            "objectives": "1. Implement Raft leader election, heartbeats, and randomized election timeouts.\n2. Replicate state machine logs reliably across 3-5 cluster nodes.\n3. Handle network partitions and recovery without split-brain corruption.",
+            "modules": "Module 1: Raft State Machine (Follower, Candidate, Leader)\nModule 2: gRPC RPC Communication & Log Serialization\nModule 3: In-Memory Storage Engine with Snapshotting & Disk Compaction\nModule 4: Cluster Management CLI & Chaos Testing Harness",
+            "db_requirements": "AppendOnlyLog (term, index, command), NodeState (current_term, voted_for, commit_index)",
+            "future_enhancements": "Consistent hashing for data sharding across multiple Raft groups.",
+            "advantages": "Exceptional computer science depth, top-tier project for Tier-1 software company interviews.",
+            "expected_output": "Working 3-node cluster surviving node kills with continuous zero-loss read/write availability."
+        },
+        {
+            "title": "Automated SQL Query Performance Tuning & Explain Plan Analyzer",
+            "category": "Database Management",
+            "description": "A developer tool that analyzes slow SQL queries, visualizes database execution plans, detects missing indexes, and suggests optimized refactored queries.",
+            "technologies": "Python, PostgreSQL, SQLite, React, sqlparse",
+            "required_skills": "SQL, Python, Database Indexing, Query Optimization",
+            "difficulty": "Intermediate",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Junior developers frequently write unindexed N+1 queries and inefficient Cartesian joins, degrading database throughput.",
+            "objectives": "1. Parse AST of complex SQL queries and inspect WHERE/JOIN conditions.\n2. Run EXPLAIN (ANALYZE, BUFFERS) and generate tree visualizations of scan operations.\n3. Suggest optimal B-Tree/Hash indexes and rewrite subqueries to joins.",
+            "modules": "Module 1: SQL Parser & Anti-pattern Detection Engine\nModule 2: Execution Plan Tree Visualizer\nModule 3: Index Advisor & Cost Simulator\nModule 4: Interactive Web Playground for Query Benchmarking",
+            "db_requirements": "QueryBenchmarks (query_text, original_cost, optimized_cost, recommended_indexes)",
+            "future_enhancements": "Support for MySQL and Oracle execution formats, auto-migration generation.",
+            "advantages": "Solid practical DBA skills, immediate utility in real-world software engineering.",
+            "expected_output": "Web app where pasting a slow query immediately highlights Seq Scans and provides the exact CREATE INDEX command."
+        },
+
+        # --- MOBILE APPLICATIONS ---
+        {
+            "title": "Campus SafeWalk: Geofenced Emergency SOS & Peer Escort App",
+            "category": "Mobile Applications",
+            "description": "A mobile safety application for college campuses featuring live route tracking, geofenced danger zones, shake-to-alert SOS, and buddy walk requests.",
+            "technologies": "Flutter, Dart, Firebase, Google Maps API, Node.js",
+            "required_skills": "Flutter/Dart, Mobile Development, Geolocation APIs, Firebase",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Students walking across large campuses late at night feel unsafe and lack instantaneous methods to signal campus security and peers.",
+            "objectives": "1. Provide real-time location sharing with designated trusted contacts.\n2. Trigger instant emergency SMS and sirens using accelerometer shake gestures.\n3. Match students walking in the same direction for verified buddy escorting.",
+            "modules": "Module 1: Map Tracking & Geofencing Security Perimeter\nModule 2: Accelerometer Sensor SOS Trigger\nModule 3: Buddy Escort Peer Pairing Algorithm\nModule 4: Security Guard Command Center Web Dashboard",
+            "db_requirements": "Users, ActiveEscorts, EmergencyAlerts (timestamp, lat, lng, student_id, resolved_status)",
+            "future_enhancements": "Audio distress keyword detection using on-device speech processing.",
+            "advantages": "Immediate campus relevance, demonstrates mobile hardware sensor integration.",
+            "expected_output": "Functional Android/iOS app with background GPS tracking and emergency notification dispatcher."
+        },
+        {
+            "title": "Smart Community Food Rescue & Surplus Distribution Network",
+            "category": "Mobile Applications",
+            "description": "A hyper-local mobile app connecting college canteens, restaurants, and event organizers with local NGOs to donate leftover edible food before expiry.",
+            "technologies": "React Native, Expo, JavaScript, Firebase Firestore, Cloud Functions",
+            "required_skills": "JavaScript, React Native, Mobile UI/UX, Cloud Firestore",
+            "difficulty": "Beginner",
+            "duration": "1-2 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Tons of pristine food from college festivals and hostels are dumped daily while nearby shelters face severe food shortages.",
+            "objectives": "1. Allow donors to post available food portions with expiry timestamps and photos.\n2. Notify nearby verified volunteer drivers with pickup routes.\n3. Track cumulative meals saved and carbon offset metrics.",
+            "modules": "Module 1: Donor Post Creation & Expiry Countdown Timer\nModule 2: NGO Claim System & Route Navigation\nModule 3: Volunteer Verification & Proof of Delivery\nModule 4: Gamification Badges & Leaderboard",
+            "db_requirements": "Donations, NGOs, Volunteers, ImpactStats",
+            "future_enhancements": "AI food freshness estimation via camera inspection.",
+            "advantages": "Social good project, easy to test on real phones, great app store candidate.",
+            "expected_output": "Clean cross-platform mobile app with push notifications and donation matching."
+        },
+
+        # --- IOT (INTERNET OF THINGS) ---
+        {
+            "title": "Smart Agriculture Automated Irrigation & Soil Telemetry Station",
+            "category": "IoT",
+            "description": "An IoT-enabled solar-powered telemetry station measuring soil moisture, NPK levels, and temperature, driving automated solenoid valves via MQTT cloud.",
+            "technologies": "Arduino/ESP32, C++, Python, MQTT, ThingsBoard/Node-RED, Raspberry Pi",
+            "required_skills": "C/C++, Embedded Systems, MQTT, Python, Hardware Interfacing",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Farmers either over-irrigate or under-irrigate fields, wasting 40% of agricultural water and degrading soil nutrient balances.",
+            "objectives": "1. Interface soil moisture, DHT22, and light sensors with low-power ESP32 microcontrollers.\n2. Transmit sensor telemetry via MQTT to a central Raspberry Pi gateway.\n3. Automatically trigger 12V water pump relays based on dynamic moisture thresholds.",
+            "modules": "Module 1: Embedded Sensor Acquisition & Deep Sleep Power Management\nModule 2: MQTT Broker & Wi-Fi/GSM Communication Bridge\nModule 3: Automated Valve Control Logic & Weather Forecast Integration\nModule 4: Web Telemetry Dashboard & SMS Warning System",
+            "db_requirements": "SensorReadings (node_id, moisture, temp, humidity, battery_volts, timestamp), ValveEvents",
+            "future_enhancements": "LoRaWAN long-range radio transmission for 10km farm coverage.",
+            "advantages": "Tangible physical prototype combining electronics, networking, and software.",
+            "expected_output": "Working hardware prototype with live web graphs and automatic pump relay actuation."
+        },
+        {
+            "title": "Industrial Machinery Vibration & Predictive Maintenance Node",
+            "category": "IoT",
+            "description": "An edge IoT node using triaxial accelerometers to monitor motor vibration signatures and detect early mechanical bearing faults before catastrophic failure.",
+            "technologies": "ESP32, C++, Edge Impulse, Python, Flask, WebSocket",
+            "required_skills": "C++, Embedded Systems, Signal Processing, Edge AI",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-4 members)",
+            "problem_solved": "Unexpected factory equipment breakdowns cause millions in downtime; scheduled inspections fail to catch rapid wear.",
+            "objectives": "1. Sample MPU6050 accelerometer data at 500Hz on an ESP32 microcontroller.\n2. Perform Fast Fourier Transform (FFT) to extract spectral vibration peaks.\n3. Deploy tiny ML classifier on-chip to detect bearing anomalies locally.",
+            "modules": "Module 1: High-Frequency Sensor Interfacing & DMA Sampling\nModule 2: On-Device FFT Spectral Analysis\nModule 3: TinyML Anomaly Inference (Normal, Misaligned, Bearing Fault)\nModule 4: Central Factory SCADA Dashboard with Warning Sirens",
+            "db_requirements": "Machines, FaultLogs, SpectralHistory",
+            "future_enhancements": "Acoustic emission audio analysis with digital MEMS microphones.",
+            "advantages": "Cutting-edge Industry 4.0 project, high interest from manufacturing sponsors.",
+            "expected_output": "Vibration sensor mounted on motor alerting machine operators before failure occurs."
+        },
+
+        # --- CLOUD COMPUTING ---
+        {
+            "title": "Serverless Function Autoscaler & Multi-Tenant Cost Optimizer",
+            "category": "Cloud Computing",
+            "description": "A private cloud micro-FaaS (Function-as-a-Service) platform that compiles, deploys, and autoscales user code in microVMs/containers with zero-scale cold start optimizations.",
+            "technologies": "Go/Python, Docker, Kubernetes, Prometheus, Redis, React",
+            "required_skills": "Python/Go, Docker, Linux Containers, Cloud Architecture",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Students and startups overpay for static cloud VPS instances that sit idle 80% of the day.",
+            "objectives": "1. Build an API gateway that routes incoming HTTP requests to isolated function workers.\n2. Scale worker containers from 0 to N instances within 200 milliseconds under load.\n3. Track CPU/RAM usage and generate per-millisecond billing breakdowns.",
+            "modules": "Module 1: Function Packaging & Dynamic Container Builder\nModule 2: Reverse Proxy & Request Queue Dispatcher\nModule 3: Metrics Collector (Prometheus) & Autoscaling Controller\nModule 4: Developer Console for Code Upload & Telemetry Logs",
+            "db_requirements": "Functions (fn_id, name, runtime, memory_limit, route), Invocations (latency, status, billing)",
+            "future_enhancements": "WebAssembly (Wasm) runtime for sub-millisecond cold starts.",
+            "advantages": "Demonstrates elite cloud infrastructure engineering and systems internals.",
+            "expected_output": "Custom serverless cloud where uploading a Python snippet gives a public URL that handles bursts of 1000 requests/sec."
+        },
+        {
+            "title": "Multi-Cloud Object Storage Synchronization & Redundancy Manager",
+            "category": "Cloud Computing",
+            "description": "A unified cloud storage gateway that shards files, encrypts pieces, and replicates them across AWS S3, Google Cloud Storage, and Azure Blob to prevent vendor lock-in.",
+            "technologies": "Python, AWS Boto3, Google Cloud SDK, Azure Blob SDK, Flask",
+            "required_skills": "Python, Cloud APIs, Cryptography, Distributed Storage",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Enterprises suffer catastrophic downtime when a single cloud provider encounters regional outages; switching providers is prohibitively expensive.",
+            "objectives": "1. Split files into Reed-Solomon erasure-coded chunks.\n2. Distribute chunks across three separate cloud providers simultaneously.\n3. Reconstruct the original file even if one cloud provider is completely down.",
+            "modules": "Module 1: Erasure Coding & AES-256 File Sharding Engine\nModule 2: Multi-Cloud Provider Adapter (S3, GCS, Azure)\nModule 3: Health Monitor & Background Auto-Healer\nModule 4: Unified Web File Explorer",
+            "db_requirements": "Files (file_id, name, size, hash), Chunks (chunk_id, provider, bucket, checksum)",
+            "future_enhancements": "Cost-aware routing that stores rarely accessed archives on the cheapest tier.",
+            "advantages": "Direct enterprise relevance, teaches hands-on multi-cloud SDK programming.",
+            "expected_output": "Storage web portal allowing upload/download that seamlessly withstands simulated AWS S3 total failure."
+        },
+
+        # --- COMPUTER VISION ---
+        {
+            "title": "Real-Time Driver Drowsiness & Yawn Detection Safety System",
+            "category": "Computer Vision",
+            "description": "An in-cabin vehicle safety monitor that uses webcams to track facial landmarks, measuring Eye Aspect Ratio (EAR) and Mouth Aspect Ratio (MAR) to sound alarms.",
+            "technologies": "Python, OpenCV, Dlib, Pygame, Tkinter/Web",
+            "required_skills": "Python, Computer Vision, OpenCV, Signal Analysis",
+            "difficulty": "Beginner",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Driver fatigue is responsible for over 20% of highway road fatalities worldwide.",
+            "objectives": "1. Detect 68 facial landmark coordinates in real-time at 30+ FPS.\n2. Compute Eye Aspect Ratio (EAR) to detect prolonged micro-sleeps (> 1.5 seconds).\n3. Trigger loud audio siren and save incident timestamp clips.",
+            "modules": "Module 1: Real-Time Video Capture & Face Bounding Box\nModule 2: Landmark Extraction (Eyes and Lips geometry)\nModule 3: Threshold State Machine & Alarm Actuator\nModule 4: Fatigue Analytics History & Incident Replay",
+            "db_requirements": "FatigueIncidents (id, timestamp, duration_seconds, ear_value, snapshot_path)",
+            "future_enhancements": "Infrared night-vision camera support and head nod detection.",
+            "advantages": "Highly visual, easy to demonstrate in viva with a simple laptop webcam.",
+            "expected_output": "Real-time webcam feed with landmark overlays and instant audio buzzer when eyes close."
+        },
+        {
+            "title": "Automated License Plate Recognition & Smart Parking Valet",
+            "category": "Computer Vision",
+            "description": "An intelligent parking facility management system with YOLO vehicle detection, license plate localization, OCR character recognition, and automated ticketing.",
+            "technologies": "Python, YOLOv8, EasyOCR, OpenCV, SQLite, Flask",
+            "required_skills": "Python, Deep Learning, Object Detection, Computer Vision",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Manual parking toll booths create long vehicle queues, lost paper tickets, and untracked parking bay occupancies.",
+            "objectives": "1. Detect incoming vehicles and crop license plate bounding boxes using YOLO.\n2. Perform optical character recognition (OCR) and alphanumeric syntax validation.\n3. Calculate parking fees automatically upon vehicle exit based on time spent.",
+            "modules": "Module 1: Vehicle Entry/Exit Video Feed Processor\nModule 2: License Plate Localization & OCR Enhancement\nModule 3: Parking Slot Allocation & Occupancy Tracker\nModule 4: Automated Billing & Gate Relay Controller",
+            "db_requirements": "Vehicles, ParkingSessions (plate_number, entry_time, exit_time, slot_id, fee, payment_status)",
+            "future_enhancements": "FASTag RFID integration and mobile reservation for parking bays.",
+            "advantages": "Practical commercial application, combines modern YOLO models with business logic.",
+            "expected_output": "System recognizing license plates from video streams with >92% accuracy and printing digital gate passes."
+        },
+
+        # --- JAVA APPLICATIONS ---
+        {
+            "title": "Enterprise Hospital Management & Electronic Health Records (EHR)",
+            "category": "Java Applications",
+            "description": "A high-concurrency healthcare enterprise system providing doctor-patient appointment scheduling, pharmacy inventory, lab reports, and role-based access security.",
+            "technologies": "Java, Spring Boot, Spring Security, Hibernate/JPA, MySQL, Thymeleaf",
+            "required_skills": "Java, Object-Oriented Programming, Spring Boot, SQL",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Hospitals suffer from fragmented patient records, double-booked doctor consultations, and untracked medicine stock expiration.",
+            "objectives": "1. Implement secure role-based access control (Admin, Doctor, Nurse, Patient, Pharmacist).\n2. Manage outpatient queues with dynamic doctor availability calendars.\n3. Generate digitally signed prescription PDFs and track batch medicine expiries.",
+            "modules": "Module 1: Patient Admission & Electronic Medical History\nModule 2: Doctor Appointment Scheduler & Slot Allocator\nModule 3: Pharmacy Inventory & Automated Expiry Restock Alerts\nModule 4: Diagnostic Lab Billing & PDF Report Dispatcher",
+            "db_requirements": "Users, Doctors, Patients, Appointments, Prescriptions, MedicineStock, LabReports",
+            "future_enhancements": "Telemedicine video integration and HL7 FHIR compliance.",
+            "advantages": "Standard enterprise Java architecture, demonstrates industry-ready Spring Boot design patterns.",
+            "expected_output": "Enterprise web portal with automated email confirmations, prescription generators, and inventory tracking."
+        },
+        {
+            "title": "High-Frequency Stock Market Order Matching Engine",
+            "category": "Java Applications",
+            "description": "An ultra-low latency in-memory financial order book matching engine utilizing custom lock-free queues, binary search trees, and FIX protocol messaging.",
+            "technologies": "Java, Java Concurrency, LMAX Disruptor, Maven, JavaFX",
+            "required_skills": "Java, Multithreading, Data Structures, Concurrency",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Financial exchanges require sub-microsecond trade execution without race conditions or memory allocation stalls.",
+            "objectives": "1. Implement Price-Time Priority (FIFO) matching algorithm for Buy and Sell limit orders.\n2. Maximize throughput using Java's lock-free ring buffers (Disruptor pattern).\n3. Render real-time Depth of Market (Level 2 Order Book) visualizer.",
+            "modules": "Module 1: Order Book Data Structure (TreeMap + Doubly Linked Lists)\nModule 2: Thread-Safe Matching Engine & Trade Execution Dispatcher\nModule 3: Market Data Feed Simulator (Randomized Order Generator)\nModule 4: JavaFX Live Order Book & Candlestick Chart UI",
+            "db_requirements": "TradeAuditLog (trade_id, buyer_id, seller_id, symbol, price, quantity, execution_nanos)",
+            "future_enhancements": "FIX protocol socket server and stop-loss market order types.",
+            "advantages": "Top-tier demonstration of deep computer science fundamentals: memory profiling, concurrency, and algorithms.",
+            "expected_output": "Matching engine executing 500,000+ orders per second with visual order book display."
+        },
+
+        # --- PYTHON APPLICATIONS ---
+        {
+            "title": "Automated Python Code Reviewer & Security Linter Bot",
+            "category": "Python Applications",
+            "description": "A developer productivity tool that inspects Python source files using Abstract Syntax Trees (AST) to detect code smells, cyclomatic complexity, and security flaws.",
+            "technologies": "Python, AST Module, Radon, Bandit, PyLint, Rich, Click",
+            "required_skills": "Python, Metaprogramming, AST, Clean Code Principles",
+            "difficulty": "Intermediate",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Student programmers write unmaintainable code with hidden SQL injection risks, hardcoded passwords, and extreme cognitive complexity.",
+            "objectives": "1. Parse Python code into AST nodes and walk the syntax tree for anti-patterns.\n2. Calculate Cyclomatic Complexity and Halstead maintainability metrics.\n3. Produce colorful terminal reports and automated GitHub PR review comments.",
+            "modules": "Module 1: AST Visitor & Pattern Matcher (Hardcoded secrets, unsafe eval)\nModule 2: Code Metrics Calculator (Complexity, nesting depth, LoC)\nModule 3: Auto-Refactoring Engine (Suggesting list comprehensions, type hints)\nModule 4: CLI Interface & HTML/JSON Report Exporter",
+            "db_requirements": "ReviewHistory (project_name, timestamp, total_files, score, issues_json)",
+            "future_enhancements": "LLM-assisted automated docstring generation.",
+            "advantages": "Teaches fundamental Python compiler mechanics and software engineering quality standards.",
+            "expected_output": "CLI command `pyreview <file.py>` outputting quality grades (A to F) with exact line number refactoring recommendations."
+        },
+        {
+            "title": "Algorithmic Cryptocurrency Trading Strategy Backtester & Bot",
+            "category": "Python Applications",
+            "description": "A quantitative finance backtesting framework that simulates algorithmic trading strategies (SMA Crossover, RSI, MACD) against historical tick data with slippage modeling.",
+            "technologies": "Python, Pandas, NumPy, Matplotlib, CCXT, Bokeh",
+            "required_skills": "Python, Data Analysis, Algorithmic Thinking, Finance Basics",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Retail traders lose capital by deploying untested strategies in live volatile crypto markets without simulating transaction fees and slippage.",
+            "objectives": "1. Ingest historical candlestick OHLCV data from Binance/Coinbase APIs.\n2. Implement vector-based strategy backtesting with stop-loss and take-profit rules.\n3. Compute financial risk metrics: Sharpe Ratio, Maximum Drawdown, and Win/Loss ratio.",
+            "modules": "Module 1: Market Data Ingestion & Cache Manager\nModule 2: Technical Indicator Calculation Engine (RSI, Bollinger Bands)\nModule 3: Order Simulation Engine with Slippage & Commission Models\nModule 4: Interactive Performance Tearsheet & Equity Curve Plotter",
+            "db_requirements": "Strategies, BacktestRuns (strategy_name, start_date, end_date, total_return, sharpe, max_drawdown), Trades",
+            "future_enhancements": "Paper-trading mode via live WebSocket price tickers.",
+            "advantages": "High student appeal, combines data manipulation with practical algorithmic logic.",
+            "expected_output": "Interactive HTML tearsheet showing cumulative returns graph, trade breakdown table, and risk metrics."
+        },
+
+        # --- ADDITIONAL HIGH DEMAND PROJECTS ---
+        {
+            "title": "Intelligent Resume Screening & Candidate Ranking System",
+            "category": "Artificial Intelligence",
+            "description": "An NLP system that automatically parses PDF/DOCX resumes, extracts key skills and experience, and ranks candidates against job descriptions using BERT similarity.",
+            "technologies": "Python, spaCy, Sentence-Transformers, PyPDF2, Flask, Bootstrap",
+            "required_skills": "Python, NLP, Information Extraction, Machine Learning",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "HR departments receive hundreds of resumes for a single job opening, taking days of manual reading to find qualified applicants.",
+            "objectives": "1. Extract unstructured text from diverse resume layouts and formats.\n2. Perform Named Entity Recognition (NER) for colleges, degrees, skills, and companies.\n3. Calculate semantic cosine similarity between job requirements and resume profiles.",
+            "modules": "Module 1: Document Parsing & Text Extraction Pipeline\nModule 2: Custom NER Skill & Education Extractor\nModule 3: Sentence-BERT Semantic Matching & Ranking Engine\nModule 4: Recruiter Dashboard with Match Score Breakdown",
+            "db_requirements": "JobDescriptions, Resumes (filename, candidate_name, parsed_skills, experience_years), RankingResults",
+            "future_enhancements": "Bias-removal mode (masking gender, age, and name during ranking).",
+            "advantages": "Very common requirement in recruiting companies, easy to demonstrate with sample CVs.",
+            "expected_output": "Web app where uploading a zip of 20 resumes ranks them with match % and highlights missing critical skills."
+        },
+        {
+            "title": "Zero-Trust Microsegmentation & Access Control Simulator",
+            "category": "Cybersecurity",
+            "description": "A cybersecurity simulation tool implementing Never Trust, Always Verify policies with dynamic context-aware authorization and least-privilege tokens.",
+            "technologies": "Python, Flask, Cryptography, SQLite, Vis.js",
+            "required_skills": "Python, Identity & Access Management, Cryptography, Security Architecture",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Perimeter-based corporate firewalls fail when an attacker breaches one machine and moves laterally across the entire enterprise network.",
+            "objectives": "1. Model network services as isolated micro-segments requiring explicit mutual TLS authentication.\n2. Evaluate dynamic risk scores based on user device health, geo-location, and time-of-day.\n3. Visualise access grants and blocked lateral movement attempts on an interactive graph.",
+            "modules": "Module 1: Context Engine & Risk-Based Policy Evaluator\nModule 2: Ephemeral Short-Lived Token Issuer\nModule 3: Microsegment Proxy & Enforcement Point\nModule 4: Live Attack Simulation & Graph Topology Visualizer",
+            "db_requirements": "Policies, Devices, Users, AccessRequests, LateralMovementLogs",
+            "future_enhancements": "Integration with Open Policy Agent (OPA).",
+            "advantages": "Aligns with modern industry shift toward Zero-Trust Architecture (NIST SP 800-207).",
+            "expected_output": "Interactive visualization proving that compromised node credentials cannot access sensitive database segments."
+        },
+        {
+            "title": "Autonomous Indoor Drone Obstacle Avoidance & Path Navigation",
+            "category": "Computer Vision",
+            "description": "Simulation and prototype of an autonomous quadcopter using monocular depth estimation and optical flow to navigate indoor hallways without GPS.",
+            "technologies": "Python, OpenCV, ROS/Gazebo, PyTorch, NumPy",
+            "required_skills": "Python, Computer Vision, Robotics Basics, Mathematics",
+            "difficulty": "Advanced",
+            "duration": "4-6 months",
+            "team_size": "Team (3-4 members)",
+            "problem_solved": "GPS navigation does not work indoors; search-and-rescue drones need vision-based navigation in collapsed or GPS-denied environments.",
+            "objectives": "1. Estimate relative depth maps from single camera video frames using MiDaS neural net.\n2. Compute Lucas-Kanade optical flow vectors to determine vehicle drift.\n3. Execute real-time obstacle avoidance maneuvers in simulated Gazebo corridors.",
+            "modules": "Module 1: Monocular Depth Estimation Pipeline\nModule 2: Optical Flow Velocity Estimator\nModule 3: Potential Field Path Planning Algorithm\nModule 4: 3D Drone Flight Visualizer & Telemetry Teleprompter",
+            "db_requirements": "FlightLogs (timestamp, altitude, x, y, z, closest_obstacle_dist, command_sent)",
+            "future_enhancements": "Visual SLAM 3D point cloud room reconstruction.",
+            "advantages": "Prestigious robotics project, high marks in national design competitions and final year projects.",
+            "expected_output": "Simulated drone maneuvering through tight corridor obstacles with live camera feed display."
+        },
+        {
+            "title": "Smart Home IoT Energy Monitor & Appliance Disaggregation",
+            "category": "IoT",
+            "description": "A non-intrusive load monitoring (NILM) IoT device that clamps to a household main circuit breaker, identifies individual running appliances, and tracks power waste.",
+            "technologies": "ESP32, C++, Python, Scikit-learn, Chart.js, MQTT",
+            "required_skills": "Embedded Systems, C++, Python, Signal Processing",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Consumers receive a single lump-sum monthly electricity bill with zero insight into which faulty appliances are wasting power.",
+            "objectives": "1. Sample current (CT sensor) and voltage waveforms at 1kHz.\n2. Calculate Active, Reactive, and Apparent Power metrics on ESP32.\n3. Classify appliance signatures (Refrigerator, AC, Microwave) using transient surge profiles.",
+            "modules": "Module 1: High-Speed Analog Signal Acquisition & Calibration\nModule 2: Power Feature Extraction (RMS, Crest Factor, Harmonics)\nModule 3: Machine Learning Appliance Classifier\nModule 4: Real-time Household Energy Consumption Dashboard",
+            "db_requirements": "EnergyReadings, ApplianceEvents (timestamp, appliance_name, power_watts, cost_estimate)",
+            "future_enhancements": "Solar panel net-metering optimization and battery storage advisor.",
+            "advantages": "Green computing topic, cost-effective hardware build, strong practical demonstration.",
+            "expected_output": "Web app displaying live watt meter with automatic alerts when refrigerator door is left open."
+        },
+        {
+            "title": "Cloud-Native Microservices Service Mesh Observability Dashboard",
+            "category": "Cloud Computing",
+            "description": "A distributed tracing and telemetry visualizer that intercepts HTTP calls across microservices, generating live dependency topology graphs and latency heatmaps.",
+            "technologies": "Go/Python, Docker, OpenTelemetry, Jaeger, D3.js, React",
+            "required_skills": "Python/Go, Microservices, Distributed Tracing, Docker",
+            "difficulty": "Advanced",
+            "duration": "3-4 months",
+            "team_size": "Team (2-3 members)",
+            "problem_solved": "Debugging cascading errors and bottlenecks in distributed microservice architectures is nearly impossible without distributed tracing.",
+            "objectives": "1. Propagate W3C Trace Context headers (traceparent) across microservices.\n2. Collect and aggregate span timings for database queries and inter-service HTTP calls.\n3. Render real-time interactive network topology diagrams with bottleneck indicators.",
+            "modules": "Module 1: Lightweight Tracing Middleware Interceptor\nModule 2: Trace Aggregation & Span Storage Collector\nModule 3: Dependency Graph Generator (D3.js)\nModule 4: Latency Percentile (p95, p99) Analysis & Alert Engine",
+            "db_requirements": "Traces, Spans (trace_id, span_id, parent_span_id, service_name, duration_ms, error_flag)",
+            "future_enhancements": "Automated root-cause anomaly detection for downstream database slowdowns.",
+            "advantages": "State-of-the-art DevOps engineering skill, highly attractive to cloud infrastructure recruiters.",
+            "expected_output": "Interactive graphical dashboard mapping complex service calls with millisecond latency breakdowns."
+        },
+        {
+            "title": "Epidemiological Disease Outbreak Pattern & Hospital Strain Forecaster",
+            "category": "Data Science",
+            "description": "A public health epidemiological analytics platform utilizing compartmental SIR/SEIR models and Poisson regression to project viral transmission rates and ICU bed occupancy.",
+            "technologies": "Python, Pandas, SciPy, Plotly, Streamlit, Statsmodels",
+            "required_skills": "Python, Mathematical Modeling, Data Science, Statistics",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Municipal health authorities lack accessible predictive modeling to prepare hospital infrastructure ahead of seasonal epidemic surges.",
+            "objectives": "1. Ingest regional disease case counts, testing positivity, and hospital bed capacity feeds.\n2. Solve differential equations for infectious disease transmission (SEIR model).\n3. Simulate policy interventions (mask mandates, social distancing) and graph ICU bed capacity.",
+            "modules": "Module 1: Automated Data Ingestion & Missing Value Smoothing\nModule 2: Mathematical SEIR Transmission Engine\nModule 3: Hospital Resource Allocation Simulator\nModule 4: Interactive Plotly Web Dashboard & Scenario Planner",
+            "db_requirements": "RegionalCases, HospitalMetrics, ModelRuns",
+            "future_enhancements": "Genomic variant tracking and wastewater surveillance data assimilation.",
+            "advantages": "Strong academic mathematics and healthcare analytics crossover, highly publishable.",
+            "expected_output": "Web platform allowing medical officers to adjust R0 reproduction parameters and view 30-day hospitalization curves."
+        },
+        {
+            "title": "Real-Time Network Packet Sniffer & Anomaly Protocol Analyzer",
+            "category": "Computer Networks",
+            "description": "A deep packet inspection tool that captures promiscuous network traffic, reconstructs TCP streams, visualizes protocol distributions, and flags ARP spoofing attacks.",
+            "technologies": "Python, Scapy, PyShark, Tkinter/Web, Matplotlib, SQLite",
+            "required_skills": "Python, Networking, TCP/IP, Packet Analysis, Security",
+            "difficulty": "Intermediate",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Network administrators need lightweight, customizable tools to diagnose unauthorized devices and rogue DHCP/ARP spoofing on local subnets.",
+            "objectives": "1. Capture raw Ethernet frames and decode IPv4/IPv6, TCP, UDP, DNS, and HTTP headers.\n2. Track ARP request-response pairs to alert on MAC address discrepancies (ARP cache poisoning).\n3. Reassemble fragmented TCP streams and extract unencrypted credentials.",
+            "modules": "Module 1: Raw Socket & BPF Filter Packet Capturer\nModule 2: Protocol Dissector & Header Deconstructor\nModule 3: ARP Poisoning & Port Scan Detection Engine\nModule 4: Live Bandwidth Meter & Traffic Pie Chart Visualizer",
+            "db_requirements": "PacketCaptures, HostTable (ip, mac, vendor, first_seen, last_seen), SecurityAlerts",
+            "future_enhancements": "TLS handshake SNI certificate extraction and Geo-IP mapping.",
+            "advantages": "Demonstrates hands-on mastery of networking protocols and packet structures without relying on third-party black boxes.",
+            "expected_output": "Desktop/Web UI capturing live Wi-Fi packets with color-coded protocol breakdowns and rogue ARP alarms."
+        },
+        {
+            "title": "Interactive B-Tree & LSM-Tree Storage Engine Simulator",
+            "category": "Database Management",
+            "description": "An educational and benchmarking simulator that visually compares B-Tree vs. Log-Structured Merge (LSM) Tree read/write amplification, disk paging, and compaction.",
+            "technologies": "Python, JavaScript, D3.js, Canvas API, Flask",
+            "required_skills": "Python, Data Structures, Algorithms, Systems Programming",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Computer science students struggle to conceptualize how modern database storage engines (PostgreSQL vs. Cassandra/RocksDB) manage disk I/O.",
+            "objectives": "1. Implement in-memory and simulated disk block B-Tree node splitting and rebalancing.\n2. Implement MemTable, Write-Ahead Log (WAL), SSTables, and Leveled Compaction for LSM trees.\n3. Benchmark write amplification factor (WAF) under random vs sequential workloads.",
+            "modules": "Module 1: B+ Tree Core & Disk Page Allocation Model\nModule 2: LSM Tree MemTable, SSTable & Compaction Worker\nModule 3: Benchmarking Engine (Latency percentiles, I/O count)\nModule 4: D3.js Interactive Step-by-Step Algorithm Visualizer",
+            "db_requirements": "SimulatedDiskPages (page_id, block_data, dirty_flag), BenchmarkRuns",
+            "future_enhancements": "Bloom filter false positive tuning and cache eviction (LRU vs ARC) simulators.",
+            "advantages": "Exceptional academic demonstrator for database internals, praised by professors and technical recruiters.",
+            "expected_output": "Interactive visualization where students watch B-Tree nodes split or SSTables merge step-by-step with real-time I/O counters."
+        },
+        {
+            "title": "Smart AI Expense Tracker with Receipt OCR & Voice Budgeting",
+            "category": "Mobile Applications",
+            "description": "A cross-platform personal finance mobile app that scans paper receipts using on-device OCR, parses line items into expense categories, and alerts on monthly budget thresholds.",
+            "technologies": "Flutter, Dart, Google ML Kit, SQLite/Isar, Provider",
+            "required_skills": "Flutter, Dart, Mobile UI, OCR, Local Storage",
+            "difficulty": "Beginner",
+            "duration": "1-2 months",
+            "team_size": "Individual (1 person)",
+            "problem_solved": "Students and young professionals fail to budget because typing manual receipt amounts into finance apps is tedious and easily abandoned.",
+            "objectives": "1. Capture camera images of physical store receipts and extract merchant, date, and total.\n2. Auto-categorize purchases (Groceries, Books, Transport, Dining) using keyword heuristics.\n3. Display interactive monthly spending charts and budget warning bars.",
+            "modules": "Module 1: Camera Capture & ML Kit Text Recognition\nModule 2: Regex & Natural Language Total Price Extractor\nModule 3: Local Encrypted SQLite Database & Category Engine\nModule 4: Budget Dashboard, Donut Charts & CSV Export",
+            "db_requirements": "Categories, Expenses (id, merchant, amount, category_id, date, receipt_image_path), Budgets",
+            "future_enhancements": "Bank SMS transaction auto-parser and cloud backup.",
+            "advantages": "Clean, practical everyday utility that students can immediately install and use on their personal smartphones.",
+            "expected_output": "Slick mobile app running on Android/iOS with instant receipt scanning and budget analytics."
+        },
+        {
+            "title": "Cross-Platform Cryptographic Password & Secure Note Vault",
+            "category": "Java Applications",
+            "description": "A zero-knowledge desktop vault that protects user passwords and sensitive documents using Argon2id key derivation, AES-256-GCM encryption, and clipboard auto-clearing.",
+            "technologies": "Java, JavaFX, Bouncy Castle, SQLite, Maven",
+            "required_skills": "Java, Cryptography, Object-Oriented Design, JavaFX",
+            "difficulty": "Intermediate",
+            "duration": "1-2 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Users reuse weak passwords across multiple accounts; cloud password managers create centralized targets for major data leaks.",
+            "objectives": "1. Derive cryptographic encryption keys from a master password using Argon2id.\n2. Encrypt user credentials using authenticated AES-256-GCM.\n3. Secure in-memory variables using byte array zeroing to prevent memory dump inspection.",
+            "modules": "Module 1: Cryptographic Engine (Argon2id, AES-GCM, PBKDF2 fallback)\nModule 2: Encrypted SQLite Local Database with Integrity Checksum\nModule 3: Password Strength Meter & Entropy Calculator\nModule 4: Modern JavaFX GUI with Auto-Lock and Clipboard Sanitizer",
+            "db_requirements": "VaultHeader (salt, nonce, verification_tag), VaultEntries (encrypted_payload, iv, category)",
+            "future_enhancements": "Hardware security key (YubiKey / FIDO2) two-factor authentication.",
+            "advantages": "Solid, dependable Java application demonstrating applied cryptographic principles and defensive programming.",
+            "expected_output": "Polished desktop application with master password login, password generator, and automatic memory wipe on lock."
+        },
+        {
+            "title": "Automated Web Intelligence (OSINT) Threat Reconnaissance Suite",
+            "category": "Python Applications",
+            "description": "An open-source intelligence collection tool that gathers target domain subdomains, exposed S3 buckets, employee emails, leaked credentials, and SSL certificate history.",
+            "technologies": "Python, AsyncIO, Aiohttp, BeautifulReport, Shodan API, SQLite",
+            "required_skills": "Python, Asynchronous Programming, Cybersecurity, REST APIs",
+            "difficulty": "Intermediate",
+            "duration": "2-3 months",
+            "team_size": "Individual or Team (1-2 members)",
+            "problem_solved": "Security analysts waste hours manually running separate WHOIS, DNS bruteforce, and search engine dorking queries during initial reconnaissance.",
+            "objectives": "1. Perform asynchronous DNS enumeration and certificate transparency log scraping.\n2. Discover misconfigured public cloud storage buckets matching the organization name.\n3. Compile actionable visual intelligence reports in interactive HTML format.",
+            "modules": "Module 1: Asynchronous Subdomain & IP Range Finder\nModule 2: Cloud Bucket & Public Asset Auditor\nModule 3: Email Format Harvester & Dark Web Breach Checker\nModule 4: HTML Threat Dossier Generator with Risk Matrix",
+            "db_requirements": "ReconTargets, Assets (asset_type, value, ip, status_code, risk_score), Findings",
+            "future_enhancements": "Maltego graph export integration and continuous monitoring cron mode.",
+            "advantages": "High utility for cybersecurity blue and red teams; showcases asynchronous Python (asyncio) efficiency.",
+            "expected_output": "CLI and Web reporter generating comprehensive target reconnaissance reports within 60 seconds."
+        }
+    ]
+
+    for p in projects:
+        cursor.execute("""
+        INSERT INTO projects (
+            title, category, description, technologies, required_skills, difficulty,
+            duration, team_size, problem_solved, objectives, modules, db_requirements,
+            future_enhancements, advantages, expected_output, is_custom
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """, (
+            p["title"], p["category"], p["description"], p["technologies"], p["required_skills"],
+            p["difficulty"], p["duration"], p["team_size"], p["problem_solved"], p["objectives"],
+            p["modules"], p["db_requirements"], p["future_enhancements"], p["advantages"],
+            p["expected_output"]
+        ))
+
+    conn.commit()
+
+if __name__ == "__main__":
+    init_db(force_reseed=True)
+    print("Database initialized and seeded successfully.")

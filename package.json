@@ -1,0 +1,21 @@
+{
+  "name": "student-project-idea-recommender",
+  "version": "1.0.0",
+  "description": "Rule-Based and Content-Based Student Project Idea Recommender System for Academic College Projects",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "python": "python3 app.py",
+    "test": "python3 -m unittest discover tests"
+  },
+  "keywords": [
+    "project-recommender",
+    "academic-projects",
+    "college-capstone",
+    "cse",
+    "recommendation-system"
+  ],
+  "author": "Academic Engineering Team",
+  "license": "MIT"
+}
